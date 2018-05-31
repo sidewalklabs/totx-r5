@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * This computes a surface representing travel time from one origin to all destination cells, and writes out a
@@ -89,46 +90,74 @@ public class TravelTimeComputer {
             // searches which use distance as the quantity to minimize (because they are precalculated and stored as distance,
             // and then converted to times by dividing by speed without regard to weights/penalties for things like stairs).
             // This does mean that walk-only results will not match the walking portion of walk+transit results.
-            if (request.directModes.contains(LegMode.BICYCLE_RENT)) {
-                if (!this.network.streetLayer.bikeSharing) {
-                    LOG.warn("Bike sharing trip requested but no bike sharing stations in the " +
-                        "streetlayer");
-                    travelTimeReducer.finish();
-                    return null;
-                }
-                PointToPointQuery bikeQuery = new PointToPointQuery(network);
-                sr = bikeQuery.findBikeRentalPath(
-                    request,
-                    sr,
-                    true,
-                    false);
 
-                if (sr == null) {
-                    // Origin not found. Return an empty access times map, as is done by the other
-                    // conditions for other modes.
-                    // FIXME this is ugly. we should have a way to break out of the search early
-                    // (here and in other methods).
-                    // It causes regional analyses to be very slow when there are a large number
-                    // of disconnected cells.
-                        LOG.warn("MODE:{}, Edge near the destination coordinate wasn't found. " +
-                            "Routing didn't start!",
-                                LegMode.BICYCLE_RENT);
+            // Find travel times for all allowed direct modes and return the shortest time.
+            // This stops us from making the (sometimes incorrect) assumption that the dominant
+            // street mode will always be the fastest (e.g. walking may be faster than bikeshare
+            // for short distances, but bikeshare may be faster for longer distances.)
+            List<StreetRouter> directModeRouterOptions = new ArrayList<StreetRouter>();
+            for (LegMode dirMode : request.directModes) {
+                if (dirMode == LegMode.BICYCLE_RENT) {
+                    StreetRouter br = new StreetRouter(network.streetLayer);
+                    br.profileRequest = request;
+                    br.streetMode = accessMode;
+                    boolean originPoint = br.setOrigin(request.fromLat, request.fromLon);
+                    if (!originPoint) {
+                        // Short circuit around routing and propagation. Calling finish() before streaming in any travel times to
+                        // destinations is designed to produce the right result.
+                        LOG.info("Origin point was outside the transport network. Skipping routing and propagation, and returning default result.");
+                        return travelTimeReducer.finish();
+                    }
+
+                    if (!this.network.streetLayer.bikeSharing) {
+                        LOG.warn("Bike sharing trip requested but no bike sharing stations in the " +
+                            "streetlayer");
                         travelTimeReducer.finish();
                         return null;
+                    }
+                    PointToPointQuery bikeQuery = new PointToPointQuery(network);
+                    br = bikeQuery.findBikeRentalPath(
+                        request,
+                        sr,
+                        true,
+                        false);
+
+                    if (br == null) {
+                        // Origin not found. Return an empty access times map, as is done by the other
+                        // conditions for other modes.
+                        // FIXME this is ugly. we should have a way to break out of the search early
+                        // (here and in other methods).
+                        // It causes regional analyses to be very slow when there are a large number
+                        // of disconnected cells.
+                            LOG.warn("MODE:{}, Edge near the destination coordinate wasn't found. " +
+                                "Routing didn't start!",
+                                    LegMode.BICYCLE_RENT);
+                            travelTimeReducer.finish();
+                            return null;
+                    } else {
+                        directModeRouterOptions.add(br);
+                    }
+                } else {
+                    sr.timeLimitSeconds = request.maxTripDurationMinutes * 60;
+                    sr.streetMode = directMode;
+                    sr.quantityToMinimize = StreetRouter.State.RoutingVariable.DURATION_SECONDS;
+                    sr.route();
+                    directModeRouterOptions.add(sr);
                 }
-            } else {
-                sr.timeLimitSeconds = request.maxTripDurationMinutes * 60;
-                sr.streetMode = directMode;
-                sr.quantityToMinimize = StreetRouter.State.RoutingVariable.DURATION_SECONDS;
-                sr.route();
             }
 
             int offstreetTravelSpeedMillimetersPerSecond = (int) (request.getSpeedForMode(directMode) * 1000);
 
             // This should pull the cached version of the linkage if it's already been precomputed in the build step.
             LinkedPointSet directModeLinkedDestinations = destinations.link(network.streetLayer, directMode);
-            int[] travelTimesToTargets = directModeLinkedDestinations
-                    .eval(sr::getTravelTimeToVertex, offstreetTravelSpeedMillimetersPerSecond).travelTimes;
+
+            int[][] travelTimesByMode = new int[directModeRouterOptions.size()][directModeLinkedDestinations.size()];
+            for (int i = 0; i < directModeRouterOptions.size(); i++) {
+                StreetRouter r = directModeRouterOptions.get(i);
+                travelTimesByMode[i] = directModeLinkedDestinations
+                    .eval(r::getTravelTimeToVertex, offstreetTravelSpeedMillimetersPerSecond).travelTimes;
+            }
+            int[] travelTimesToTargets = minOf2DArray(travelTimesByMode);
 
             // Iterate over all destinations ("targets") and at each destination, save the same travel time for all percentiles.
             for (int d = 0; d < travelTimesToTargets.length; d++) {
@@ -261,5 +290,20 @@ public class TravelTimeComputer {
 
             return perTargetPropagater.propagate();
         }
+    }
+
+    /**
+     * Given an array of int arrays, return the minimum value per array position.
+     */
+    public int[] minOf2DArray(int[][] arr) {
+        int[] min = arr[0];
+        for (int i = 1; i < arr.length; i++) {
+            for (int j = 0; j < arr[i].length; j++) {
+                if (arr[i][j] < min[j]) {
+                    min[j] = arr[i][j];
+                }
+            }
+        }
+        return min;
     }
 }
