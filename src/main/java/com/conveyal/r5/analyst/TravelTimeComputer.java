@@ -49,16 +49,19 @@ public class TravelTimeComputer {
         this.gridCache = null;
     }
 
-    // We should try to decouple the internal representation of the results from how they're serialized to an API.
+    // We should try to decouple the internal representation of the results from how they're
+    // serialized to an API.
     public OneOriginResult computeTravelTimes() throws IOException {
         // The mode of travel that will be used to reach transit stations from the origin point.
         StreetMode accessMode = LegMode.getDominantStreetMode(request.accessModes);
         // The mode of travel that will be used to reach destinations from transit stations.
         StreetMode egressMode = LegMode.getDominantStreetMode(request.egressModes);
-        // The mode of travel that would be used to reach the destination directly without using transit.
+        // The mode of travel that would be used to reach the destination directly without using
+        // transit.
         StreetMode directMode = LegMode.getDominantStreetMode(request.directModes);
 
-        // The set of destinations in the one-to-many travel time calculations, already linked to the street network.
+        // The set of destinations in the one-to-many travel time calculations, already linked to
+        // the street network.
         List<PointSet> destinationList = request.getDestinations(network, gridCache);
 
         // TODO wrap in loop to repeat for multiple destinations pointsets in a regional request.
@@ -68,17 +71,19 @@ public class TravelTimeComputer {
         TravelTimeReducer travelTimeReducer = new TravelTimeReducer(request);
 
         // Attempt to set the origin point before progressing any further.
-        // This allows us to skip routing calculations if the network is entirely inaccessible. In the CAR_PARK
-        // case this StreetRouter will be replaced but this still serves to bypass unnecessary computation.
+        // This allows us to skip routing calculations if the network is entirely inaccessible.
+        // In the CAR_PARK case this StreetRouter will be replaced but this still serves to
+        // bypass unnecessary computation.
         // The request must be provided to the StreetRouter before setting the origin point.
         StreetRouter sr = new StreetRouter(network.streetLayer);
         sr.profileRequest = request;
         sr.streetMode = accessMode;
         boolean foundOriginPoint = sr.setOrigin(request.fromLat, request.fromLon);
         if (!foundOriginPoint) {
-            // Short circuit around routing and propagation. Calling finish() before streaming in any travel times to
-            // destinations is designed to produce the right result.
-            LOG.info("Origin point was outside the transport network. Skipping routing and propagation, and returning default result.");
+            // Short circuit around routing and propagation. Calling finish() before streaming in
+            // any travel times to destinations is designed to produce the right result.
+            LOG.info("Origin point was outside the transport network. Skipping routing and " +
+                "propagation, and returning default result.");
             return travelTimeReducer.finish();
         }
 
@@ -86,10 +91,12 @@ public class TravelTimeComputer {
         // Simultaneously we will find stations that allow access to the transit network.
         if (request.transitModes.isEmpty()) {
             // This search will use no transit.
-            // When doing a non-transit walk search, we're not trying to match the behavior of egress and transfer
-            // searches which use distance as the quantity to minimize (because they are precalculated and stored as distance,
-            // and then converted to times by dividing by speed without regard to weights/penalties for things like stairs).
-            // This does mean that walk-only results will not match the walking portion of walk+transit results.
+            // When doing a non-transit walk search, we're not trying to match the behavior of
+            // egress and transfer searches which use distance as the quantity to minimize (because
+            // they are precalculated and stored as distance, and then converted to times by
+            // dividing by speed without regard to weights/penalties for things like stairs).
+            // This does mean that walk-only results will not match the walking portion of
+            // walk+transit results.
 
             // Find travel times for all allowed direct modes and return the shortest time.
             // This stops us from making the (sometimes incorrect) assumption that the dominant
@@ -103,15 +110,17 @@ public class TravelTimeComputer {
                     br.streetMode = accessMode;
                     boolean originPoint = br.setOrigin(request.fromLat, request.fromLon);
                     if (!originPoint) {
-                        // Short circuit around routing and propagation. Calling finish() before streaming in any travel times to
+                        // Short circuit around routing and propagation.
+                        // Calling finish() before streaming in any travel times to
                         // destinations is designed to produce the right result.
-                        LOG.info("Origin point was outside the transport network. Skipping routing and propagation, and returning default result.");
+                        LOG.info("Origin point was outside the transport network. " +
+                            "Skipping routing and propagation, and returning default result.");
                         return travelTimeReducer.finish();
                     }
 
                     if (!this.network.streetLayer.bikeSharing) {
-                        LOG.warn("Bike sharing trip requested but no bike sharing stations in the " +
-                            "streetlayer");
+                        LOG.warn("Bike sharing trip requested but no bike sharing stations in " +
+                        "the streetlayer");
                         travelTimeReducer.finish();
                         return null;
                     }
@@ -123,14 +132,14 @@ public class TravelTimeComputer {
                         false);
 
                     if (br == null) {
-                        // Origin not found. Return an empty access times map, as is done by the other
-                        // conditions for other modes.
-                        // FIXME this is ugly. we should have a way to break out of the search early
-                        // (here and in other methods).
-                        // It causes regional analyses to be very slow when there are a large number
-                        // of disconnected cells.
-                            LOG.warn("MODE:{}, Edge near the destination coordinate wasn't found. " +
-                                "Routing didn't start!",
+                        // Origin not found. Return an empty access times map, as is done by the
+                        // other conditions for other modes.
+                        // FIXME this is ugly. we should have a way to break out of the search
+                        // early (here and in other methods).
+                        // It causes regional analyses to be very slow when there are a large
+                        // number of disconnected cells.
+                            LOG.warn("MODE:{}, Edge near the destination coordinate wasn't " +
+                                "found. Routing didn't start!",
                                     LegMode.BICYCLE_RENT);
                             travelTimeReducer.finish();
                             return null;
@@ -146,20 +155,26 @@ public class TravelTimeComputer {
                 }
             }
 
-            int offstreetTravelSpeedMillimetersPerSecond = (int) (request.getSpeedForMode(directMode) * 1000);
+            int offstreetTravelSpeedMillimetersPerSecond = (int) (request.getSpeedForMode(
+                directMode) * 1000);
 
-            // This should pull the cached version of the linkage if it's already been precomputed in the build step.
-            LinkedPointSet directModeLinkedDestinations = destinations.link(network.streetLayer, directMode);
+            // This should pull the cached version of the linkage if it's already been
+            // precomputed in the build step.
+            LinkedPointSet directModeLinkedDestinations = destinations.link(
+                network.streetLayer, directMode);
 
-            int[][] travelTimesByMode = new int[directModeRouterOptions.size()][directModeLinkedDestinations.size()];
+            int[][] travelTimesByMode =
+                new int[directModeRouterOptions.size()][directModeLinkedDestinations.size()];
             for (int i = 0; i < directModeRouterOptions.size(); i++) {
                 StreetRouter r = directModeRouterOptions.get(i);
                 travelTimesByMode[i] = directModeLinkedDestinations
-                    .eval(r::getTravelTimeToVertex, offstreetTravelSpeedMillimetersPerSecond).travelTimes;
+                    .eval(r::getTravelTimeToVertex,offstreetTravelSpeedMillimetersPerSecond)
+                    .travelTimes;
             }
             int[] travelTimesToTargets = minOf2DArray(travelTimesByMode);
 
-            // Iterate over all destinations ("targets") and at each destination, save the same travel time for all percentiles.
+            // Iterate over all destinations ("targets") and at each destination, save the same
+            // travel time for all percentiles.
             for (int d = 0; d < travelTimesToTargets.length; d++) {
                 final int travelTimeSeconds = travelTimesToTargets[d];
                 travelTimeReducer.recordTravelTimesForTarget(d, new int[] { travelTimeSeconds });
