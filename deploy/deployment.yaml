@@ -1,0 +1,45 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: ttx-router
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  replicas: 3
+  template:
+    metadata:
+      name: ttx-router
+      labels:
+        app: ttx-router
+        # Note that version must stay stable so that the replace command knows
+        # to actually tie the new replicaset with the older one, and eventually
+        # scale down the old replicaset.
+        version: "1"
+        contacts: danvk_samaratrilling
+    spec:
+      # Any changes in this section will cause a new replicaset to perform a
+      # rolling update of the onemap.
+      containers:
+      - name: ttx-router
+        image: us.gcr.io/nyc-tlc-1225/ttx-router
+        #_dockerfile: ./Dockerfile
+        ports:
+        - containerPort: 8080
+        livenessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 30
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 30
+        resources:
+          requests:
+            cpu: 1  # a full CPU
+            memory: "8Gi"
+          limits:
+            memory: "8Gi"

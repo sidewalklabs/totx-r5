@@ -1,0 +1,186 @@
+# Java Maven CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-java/ for more details
+#
+version: 2
+jobs:
+  build:
+    docker:
+      # specify the version you desire here
+      - image: maven:3.3.9-jdk-8
+
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # - image: circleci/postgres:9.4
+
+    working_directory: ~/repo
+
+    environment:
+      # Customize the JVM maximum heap limit
+      MAVEN_OPTS: -Xmx3200m
+
+    steps:
+      - checkout
+
+      # Download and cache dependencies
+      - restore_cache:
+          keys:
+          - v1-dependencies-{{ checksum "pom.xml" }}
+          # fallback to using the latest cache if no exact match is found
+          - v1-dependencies-
+
+      - run: mvn dependency:go-offline
+
+      # build package
+      - run: mvn -Dmaven.test.skip=true -Dmaven.javadoc.skip=true package
+
+      #  and run tests - doing this in one step will kill maven
+      - run: mvn test
+
+      - save_cache:
+          paths:
+            - ~/.m2
+          key: v1-dependencies-{{ checksum "pom.xml" }}
+
+      - run: mkdir /tmp/target
+      - run: cp -r ./target/* /tmp/target
+      - persist_to_workspace:
+          root: /tmp
+          paths:
+            - target
+
+  build-data:
+    docker:
+      # specify the version you desire here
+      - image: maven:3.3.9-jdk-8
+
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # - image: circleci/postgres:9.4
+
+    working_directory: ~/repo
+
+    environment:
+      # Customize the JVM maximum heap limit
+      MAVEN_OPTS: -Xmx3900m
+
+    steps:
+      - checkout
+      - attach_workspace:
+          at: /tmp
+      - run: java  -Xmx3900m -classpath /tmp/target/r5build.jar com.conveyal.r5.R5Main point --build ./totx_transit_data > ./totx_transit_data/build.log
+      - run: mkdir /tmp/totx_transit_data
+      - run: cp -r ./totx_transit_data/* /tmp/totx_transit_data
+      - persist_to_workspace:
+          root: /tmp
+          paths:
+            - totx_transit_data
+
+  publish-docker:
+    docker:
+      - image: google/cloud-sdk
+    working_directory: ~/repo
+    steps:
+      - checkout
+      - attach_workspace:
+          at: /tmp
+      - run: mkdir ./target
+      - run: cp -r /tmp/target/* ./target
+      - run: cp -r /tmp/totx_transit_data/* ./totx_transit_data
+      - run: &setup_gcloud
+          name: Setup gcloud
+          command: |
+            echo ${GCP_SERVICE_ACCOUNT_KEY} | base64 -d > ${HOME}/gcp-key.json
+            gcloud auth activate-service-account --key-file ${HOME}/gcp-key.json
+            gcloud --quiet config set project nyc-tlc-1225
+      - setup_remote_docker
+      - run:
+          name: Choose a tag
+          command: git rev-parse --short=8 HEAD > /tmp/tag
+      - run:
+          name: Build image
+          command: docker build . -f Dockerfile -t us.gcr.io/nyc-tlc-1225/ttx-router:$(cat /tmp/tag)
+      - run:
+          name: Push image
+          command: gcloud docker -- push us.gcr.io/nyc-tlc-1225/ttx-router:$(cat /tmp/tag)
+      - run:
+          name: Create K8s configs
+          command: |
+            mkdir /tmp/k8s
+            kubectl patch --local -o yaml -p \ '
+            {
+                "spec": {
+                    "template": {
+                        "spec": {
+                          "containers": [
+                                {
+                                    "name": "ttx-router",
+                                    "image": "us.gcr.io/nyc-tlc-1225/ttx-router:'$(cat /tmp/tag)'"
+                                }
+                            ]
+                        }
+                    }
+                }
+            }' -f ./deploy/deployment.yaml > /tmp/k8s/deployment.yaml
+
+      - persist_to_workspace:
+          root: /tmp
+          paths:
+            - k8s
+
+  deploy-staging:
+    docker:
+      - image: google/cloud-sdk
+    steps:
+      - attach_workspace:
+          at: /tmp
+      - run:
+          <<: *setup_gcloud
+      - run:
+          name: Apply K8s configs
+          command: |
+            gcloud container clusters get-credentials staging --zone=us-east1-b
+            kubectl apply -f /tmp/k8s/*yaml
+
+  deploy-production:
+    docker:
+      - image: google/cloud-sdk
+    steps:
+      - attach_workspace:
+          at: /tmp
+      - run:
+          <<: *setup_gcloud
+      - run:
+          name: Apply K8s configs
+          command: |
+            gcloud container clusters get-credentials prod --zone=us-east1-b
+            kubectl apply -f /tmp/k8s/*yaml
+workflows:
+  version: 2
+  build-and-publish:
+    jobs:
+      - build
+      - build-data:
+          requires:
+            - build
+      - publish-docker:
+          requires:
+            - build-data
+          filters:
+            branches:
+              only: totx-r5
+      - deploy-staging:
+          requires:
+            - publish-docker
+          filters:
+            branches:
+              only: totx-r5
+      - hold:
+          type: approval
+          requires:
+            - deploy-staging
+      - deploy-production:
+          requires:
+            - hold
