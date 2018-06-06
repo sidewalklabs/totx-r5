@@ -89,12 +89,17 @@ jobs:
       - run: mkdir ./target
       - run: cp -r /tmp/target/* ./target
       - run: cp -r /tmp/totx_transit_data/* ./totx_transit_data
+<<<<<<< HEAD
       - run: &setup_gcloud
           name: Setup gcloud
           command: |
             echo ${GCP_SERVICE_ACCOUNT_KEY} | base64 -d > ${HOME}/gcp-key.json
             gcloud auth activate-service-account --key-file ${HOME}/gcp-key.json
             gcloud --quiet config set project nyc-tlc-1225
+=======
+      - run:
+          <<: *setup_gcloud
+>>>>>>> c6c3c14fe633509f1075691a51a9b471ae2c3e1f
       - setup_remote_docker
       - run:
           name: Choose a tag
