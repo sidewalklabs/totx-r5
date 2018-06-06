@@ -170,13 +170,13 @@ workflows:
             - build-data
           filters:
             branches:
-              only: continuous-deployment
+              only: totx-r5
       - deploy-staging:
           requires:
             - publish-docker
           filters:
             branches:
-              only: continuous-deployment
+              only: totx-r5
       - hold:
           type: approval
           requires:
