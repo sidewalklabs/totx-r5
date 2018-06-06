@@ -1,7 +1,7 @@
 apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
-  name: ttx-router
+  name: totx-router
 spec:
   strategy:
     type: RollingUpdate
@@ -10,9 +10,9 @@ spec:
   replicas: 3
   template:
     metadata:
-      name: ttx-router
+      name: totx-router
       labels:
-        app: ttx-router
+        app: totx-router
         # Note that version must stay stable so that the replace command knows
         # to actually tie the new replicaset with the older one, and eventually
         # scale down the old replicaset.
@@ -22,8 +22,8 @@ spec:
       # Any changes in this section will cause a new replicaset to perform a
       # rolling update of the onemap.
       containers:
-      - name: ttx-router
-        image: us.gcr.io/nyc-tlc-1225/ttx-router
+      - name: totx-router
+        image: us.gcr.io/nyc-tlc-1225/totx-router
         #_dockerfile: ./Dockerfile
         ports:
         - containerPort: 8080

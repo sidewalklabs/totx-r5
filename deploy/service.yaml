@@ -1,10 +1,10 @@
 kind: Service
 apiVersion: v1
 metadata:
-  name: ttx-router
+  name: totx-router
 spec:
   selector:
-    app: ttx-router
+    app: totx-router
   ports:
     - name: http
       protocol: TCP
