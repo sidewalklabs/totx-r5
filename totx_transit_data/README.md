@@ -3,11 +3,8 @@
 ### GTFS
 GTFS files are distributed as zipfiles of .txt files (in CSV format).
 You can download the most recent GTFS files for Toronto-area transit at https://transitfeeds.com/l/46-ontario-canada.
-Place the zip files in `ttx_transit_data/toronto/` and name them as:
+Place the zip files in `totx_transit_data/toronto/` and name them as:
 `transit_agency_name_date_month_yearofpublication`, e.g. `ttc_gtfs_5_oct_2017`.
-
-Don't forget to copy over the entire ttx_transit_data/toronto dir to transit_data/toronto before
-running.
 
 ### GBFS
 GBFS files are distributed as a set of JSON files.
@@ -17,8 +14,8 @@ We manually download and zip the most recent station_information.json file (more
 To do so:
 * Go to [Toronto's open data portal](https://www.toronto.ca/city-government/data-research-maps/open-data/open-data-catalogue/#84045f23-7465-0892-8889-7b6f91049b29) and click Bike Share - JSON.
 * Go to the URL specified under "station_information"; something like https://tor.publicbikesystem.net/ube/gbfs/v1/en/station_status.
-* Copy the contents of this file into a new file at ttx_transit_data/toronto/station_information.json
-* `zip -rj ttx_transit_data/toronto/to_bikeshare_date_of_publication.zip ttx_transit_data/toronto/station_information.json`.
+* Copy the contents of this file into a new file at totx_transit_data/station_information.json
+* `zip -rj totx_transit_data/toronto/to_bikeshare_date_of_publication.zip totx_transit_data/toronto/station_information.json`.
 -rj ensures that when the zip file is unzipped the contents won't be contained inside a dir.
 
 Why we download:
